@@ -294,23 +294,26 @@ def benchmark(
 
     # --- PyTorch on DEVICE ---
     model.eval()
-    torch_preds_list: list[NDArray] = []
+
+    gpu_batches: list[torch.Tensor] = []
+    for x, _ in loader:
+        gpu_batches.append(x.to(device))
 
     if device == "cuda":
         torch.cuda.synchronize()
+
     t0 = time.perf_counter()
 
+    torch_logits_list: list[torch.Tensor] = []
     with torch.no_grad():
-        for x, _ in loader:
-            x = x.to(device, non_blocking=True)
-            logits = model(x)
-            torch_preds_list.append(logits.argmax(dim=1).cpu().numpy())
+        for x_gpu in gpu_batches:
+            torch_logits_list.append(model(x_gpu))
 
     if device == "cuda":
         torch.cuda.synchronize()
     torch_time = time.perf_counter() - t0
 
-    torch_preds = np.concatenate(torch_preds_list)
+    torch_preds = torch.cat(torch_logits_list).argmax(dim=1).cpu().numpy()
     torch_acc = (torch_preds == all_labels).mean()
 
     predictions_match = np.array_equal(np_preds, torch_preds)
