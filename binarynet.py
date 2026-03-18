@@ -61,23 +61,9 @@ test_loader = DataLoader(
 # -----------------------------
 # 3. STE for sign
 # -----------------------------
-class SignSTE(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x):
-        # save x for backward mask
-        ctx.save_for_backward(x)
-        return x.sign()
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        (x,) = ctx.saved_tensors
-        # clipped STE:
-        # pass gradient only where |x| <= 1
-        mask = (x.abs() <= 1).to(grad_output.dtype)
-        return grad_output * mask
-
-def ste_sign(x):
-    return SignSTE.apply(x)
+def ste_sign(x: torch.Tensor) -> torch.Tensor:
+    x_bin = x.sign()
+    return x + (x_bin - x).detach()
 
 # -----------------------------
 # 4. Standard two-layer network
@@ -327,9 +313,16 @@ def benchmark(
     torch_preds = np.concatenate(torch_preds_list)
     torch_acc = (torch_preds == all_labels).mean()
 
+    predictions_match = np.array_equal(np_preds, torch_preds)
+
     print("\n=== Inference benchmark ===")
     print(f"NumPy  CPU : {np_time:.4f}s | accuracy {np_acc:.4f}")
     print(f"PyTorch {device.upper():4s}: {torch_time:.4f}s | accuracy {torch_acc:.4f}")
+    print(f"Predictions match: {predictions_match}")
+
+    if not predictions_match:
+        mismatches = int((np_preds != torch_preds).sum())
+        print(f"  {mismatches} / {len(all_labels)} predictions differ")
 
     if np_time > 0 and torch_time > 0:
         if torch_time < np_time:
